@@ -92,6 +92,11 @@ Run =magit-todos-mode=, then open a Magit status buffer.
 :TOC:      0
 :END:
 
+*** 1.1-pre
+
+*Additions*
++  Kill running scans when Magit status buffer is closed.
+
 *** 1.0.3
 
 *Fixes*
