@@ -901,6 +901,8 @@ MAGIT-STATUS-BUFFER is what it says.  DIRECTORY is the directory in which to run
                            (list (when magit-todos-nice
                                    (list "nice" "-n5"))
                                  ,command)))))
+	   ;; TODO: Remove debug message
+	   (message (cl-format nil "~a" command))
 	   (let ((default-directory directory))
              (magit-todos--async-start-process ,scan-fn-name
                :command command
@@ -934,7 +936,9 @@ MAGIT-STATUS-BUFFER is what it says.  DIRECTORY is the directory in which to run
                    "--ignore-case")
                  "--perl-regexp"
                  "-e" search-regexp
-                 extra-args "--" rel-dir))
+		 extra-args "--" rel-dir
+		 (when ignore-dirs
+		   (cl-format nil "~{':!~a/*'~^ ~}" (-flatten ignore-dirs)))))
 
 (magit-todos-defscanner "find|grep"
   ;; NOTE: The filenames output by find|grep have a leading "./".  I don't expect this scanner to be
