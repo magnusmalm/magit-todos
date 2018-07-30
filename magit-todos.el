@@ -186,7 +186,7 @@ be a relatively expensive function, so this can be disabled if
 necessary."
   :type 'boolean)
 
-(defcustom magit-todos-update t
+(defcustom magit-todos-update nil
   "When or how often to scan for to-dos.
 When set to manual updates, the list can be updated with the
 command `magit-todos-update'.  When caching is enabled, scan for
@@ -308,6 +308,10 @@ used."
                  (const :tag "After untracked files" untracked)
                  (const :tag "After unstaged files" unstaged)
                  (symbol :tag "After selected section")))
+
+(defcustom magit-todos-ignore-directories nil
+  "Ignore directories."
+  :type '(repeat string))
 
 ;;;; Commands
 
@@ -850,13 +854,16 @@ It also adds the scanner to the customization variable
 MAGIT-STATUS-BUFFER is what it says.  DIRECTORY is the directory in which to run the scan.  DEPTH should be an integer, typically the value of `magit-todos-depth'."
                   name)
          (let* ((process-connection-type 'pipe)
-                (directory (f-relative directory default-directory))
+                (rel-dir (f-relative directory default-directory))
                 (depth (when depth
                          (number-to-string depth)))
                 (extra-args (when ,extra-args-var
                               (--map (s-split (rx (1+ space)) it 'omit-nulls)
                                      ,extra-args-var)))
-                (keywords magit-todos-keywords-list)
+                (ignore-dirs (when magit-todos-ignore-directories
+			       (--map (s-split (rx (1+ space)) it 'omit-nulls)
+				      magit-todos-ignore-directories)))
+		(keywords magit-todos-keywords-list)
                 (search-regexp (rxt-elisp-to-pcre
                                 (rx-to-string
                                  `(or
@@ -894,9 +901,10 @@ MAGIT-STATUS-BUFFER is what it says.  DIRECTORY is the directory in which to run
                            (list (when magit-todos-nice
                                    (list "nice" "-n5"))
                                  ,command)))))
-           (magit-todos--async-start-process ,scan-fn-name
-             :command command
-             :finish-func (apply-partially #'magit-todos--scan-callback magit-status-buffer results-regexp))))
+	   (let ((default-directory directory))
+             (magit-todos--async-start-process ,scan-fn-name
+               :command command
+               :finish-func (apply-partially #'magit-todos--scan-callback magit-status-buffer results-regexp)))))
        (magit-todos--add-to-custom-type 'magit-todos-scanner
          (list 'const :tag ,name #',scan-fn-symbol))
        (add-to-list 'magit-todos-scanners
@@ -912,7 +920,9 @@ MAGIT-STATUS-BUFFER is what it says.  DIRECTORY is the directory in which to run
                    (list "--maxdepth" depth))
                  (when magit-todos-ignore-case
                    "--ignore-case")
-                 extra-args search-regexp directory))
+                 (when ignore-dirs
+		   (cl-format nil "--glob=!{~{~a~^,~}}" (-flatten ignore-dirs)))
+		 extra-args search-regexp rel-dir))
 
 (magit-todos-defscanner "git grep"
   :test (string-match "--perl-regexp" (shell-command-to-string "git grep --help"))
@@ -924,7 +934,7 @@ MAGIT-STATUS-BUFFER is what it says.  DIRECTORY is the directory in which to run
                    "--ignore-case")
                  "--perl-regexp"
                  "-e" search-regexp
-                 extra-args "--" directory))
+                 extra-args "--" rel-dir))
 
 (magit-todos-defscanner "find|grep"
   ;; NOTE: The filenames output by find|grep have a leading "./".  I don't expect this scanner to be
@@ -941,7 +951,7 @@ MAGIT-STATUS-BUFFER is what it says.  DIRECTORY is the directory in which to run
                              (s-replace " <D> " (concat " <D> -maxdepth " (number-to-string (1+ depth)) " ")
                                         grep-find-template)))))
              ;; Modified from `rgrep-default-command'
-             (list "find" directory
+             (list "find" rel-dir
                    (list (when grep-find-ignored-directories
                            (list "-type" "d"
                                  "(" "-path"
